@@ -1,0 +1,272 @@
+---
+title: "CrossFit Open 24.1 Statistics Recap"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo=TRUE, warning=FALSE, message = FALSE, 
+  include=TRUE, cache=TRUE)
+```
+
+
+```{r cars, eval=FALSE}
+queryReq <- "https://c3po.crossfit.com/api/leaderboards/v2/competitions/open/2024/leaderboards?view=0&division=%d&region=0&scaled=%d&sort=0&page=%s"
+
+numberOfPagesDf <- expand.grid(
+  division=seq_len(2), ## 1=men; 2=women, one for each gender
+  scaled=seq_len(3)-1 ## encoded 0=rx, 1=scaled, 2=foundations
+  )
+
+
+numberOfPagesDf$numPages <- vapply(seq_len(nrow(numberOfPagesDf)), function(i){
+  jsonData <- 
+    jsonlite::fromJSON(
+      sprintf(queryReq, 
+              numberOfPagesDf[i,"division"], numberOfPagesDf[i,"scaled"], 1))
+  Sys.sleep(0.2)
+  jsonData$pagination$totalPages
+}, numeric(1))
+
+allLeaderboard <- lapply(seq_len(nrow(numberOfPagesDf)), function(i){
+  div <- numberOfPagesDf[i,"division"]
+  sc <- numberOfPagesDf[i,"scaled"]
+  pn <- numberOfPagesDf[i,"numPages"]
+  pn <- seq_len(pn)
+  set.seed(2)
+  pn <- sample(pn, 28)
+  tst <- lapply( pn, function(pageNum){
+    tmpFile <- sprintf("cache/20240304openlead_div%d_sc%d_page%d.rds", div, sc, pageNum)
+    if( !file.exists(tmpFile) ){
+      cat(sprintf("div %d, sc %d, pg %d\n", div, sc, pageNum))
+      dat <- 
+        jsonlite::fromJSON(sprintf(queryReq, div, sc, pageNum))
+      participants <- dat$leaderboardRows$entrant[,c("competitorId", "competitorName", "gender", "countryOfOriginCode", "affiliateName", "age", "height", "weight")]
+      participantScores <- lapply(seq_len(nrow(participants)), function(x){
+        compId <- dat$leaderboardRows$entrant$competitorId[x]
+        scores <- dat$leaderboardRows$scores[[x]]$scoreDisplay
+        retDat <- cbind( compId, Reduce(cbind, scores) )
+        colnames(retDat) <- c("competitorId", "24.1")
+        retDat
+      })
+      participantScores <- Reduce(rbind, participantScores)
+      participantScores <- merge(participants, participantScores)
+      saveRDS(participantScores, file=tmpFile)
+      Sys.sleep(runif(1, min=1, max=5))
+      participantScores
+    }else{
+      participantScores <- readRDS(tmpFile)
+    }
+    participantScores
+  })
+  tst <- dplyr::bind_rows(tst)
+  tst$division <- div
+  tst$scaled <- sc
+  tst
+})
+
+allLeaderboard <- dplyr::bind_rows(allLeaderboard)
+
+```
+
+
+```{r, eval=FALSE}
+library(lubridate)
+
+allLeaderboardClean <- allLeaderboard |>
+  dplyr::mutate( 
+    `24.1`=ifelse(!grepl("\\d+:\\d+|reps", `24.1`), NA, `24.1`),
+    division=ifelse( division == 1, "M", "F" ),
+    ) |>
+  tidyr::pivot_longer(
+    cols=dplyr::matches("24."), 
+    names_to="workout",
+    values_to="score" ) |>
+  dplyr::mutate(
+    workoutType=dplyr::case_when(
+      grepl("- s", score) ~ "scaled",
+      grepl("- f", score) ~ "foundations",
+      is.na(score) ~ NA_character_,
+      TRUE ~ "Rx" ),
+    score=gsub(" - s| - f", "" , score ),
+    time=dplyr::case_when(
+      workout == "24.1" & grepl("reps", score) ~ "15:00",
+      workout == "24.1" & !grepl("reps", score) ~  score, 
+      TRUE ~ NA),
+    timeInSecs=ms(time),
+    reps=dplyr::case_when(
+      is.na(score) ~ NA,
+      workout == "24.1" & grepl("reps", score) ~ gsub("(\\d+) reps", "\\1", score),
+      workout == "24.1" & !grepl("reps", score) ~ "180",
+      TRUE ~ NA),
+    reps=as.numeric(reps),
+    weightNumeric=dplyr::case_when(
+      grepl("kg", weight) ~ as.numeric(gsub("(\\d+) kg", "\\1", weight)),
+      grepl("lb", weight) ~ as.numeric(gsub("(\\d+) lb", "\\1", weight))*0.453592,
+      weight == "" ~ NA_integer_
+    ),
+    weightNumeric=dplyr::case_when(
+      grepl("kg", weight) ~ as.numeric(gsub("(\\d+) kg", "\\1", weight)),
+      grepl("lb", weight) ~ as.numeric(gsub("(\\d+) lb", "\\1", weight))*0.453592,
+      weight == "" ~ NA_integer_
+    ),
+    heightNumeric=dplyr::case_when(
+      grepl("cm", height) ~ as.numeric(gsub("(\\d+) cm", "\\1", height)),
+      grepl("in", height) ~ as.numeric(gsub("(\\d+) in", "\\1", height))*2.54,
+      height == "" ~ NA_integer_
+    ),
+    age=as.numeric(age),
+    ageGroup=cut( age, c(14, 16, 18, 35, 40, 45, 50, 55, 60, 65, Inf)-0.1)
+  ) |>
+  unique() |>
+  dplyr::mutate( 
+    affiliateNameShort=gsub("CrossFit | CrossFit", "", affiliateName ))
+
+levels(allLeaderboardClean$ageGroup) <- 
+  c("14-15", "16-17", "18-34", "35-39", "40-44", "45-49", "50-54", "55-59", 
+    "60-64", ">65")
+
+allLeaderboardClean |>
+  split(allLeaderboardClean$ageGroup) |>
+  purrr::map(\(df) range(df$age))
+
+any(is.na(allLeaderboardClean$weightNumeric) & 
+  allLeaderboardClean$weight != "")
+
+any(is.na(allLeaderboardClean$heightNumeric) & 
+  allLeaderboardClean$height != "")
+
+saveRDS(allLeaderboardClean, file="data/allleaderboardClean241.rds")
+
+```
+
+The CrossFit Open is the largest participatory sporting event on Earth, 
+according to the official website. In the first out of the three workouts, 
+participants needed to perform the following series of exercise in a maximum
+of 15 minutes,
+
+- 21 Dumbbell Snatches (arm 1) (50/35 lb)
+- 21 Lateral Burpees Over Dumbbell
+- 21 Dumbbell Snatches (arm 2) (50/35 lb)
+- 21 Lateral Burpees Over Dumbbell
+- 15 Dumbbell Snatches (arm 1) (50/35 lb)
+- 15 Lateral Burpees Over Dumbbell
+- 15 Dumbbell Snatches(arm 2) (50/35 lb)
+- 15 Lateral Burpees Over Dumbbell
+- 9 Dumbbell Snatches (arm 1) (50/35 lb)
+- 9 Lateral Burpees Over Dumbbell
+- 9 Dumbbell Snatches (arm 2) (50/35 lb)
+- 9 Lateral Burpees Over Dumbbell
+
+`r ` participants submitted a score, of which `` participated in the Rx 
+category, `` participated in the scaled category and `` participated in 
+the foundations category. 
+
+
+
+```{r}
+
+library(ggplot2)
+library(cowplot)
+## library(plotly)
+
+allLeaderboardClean <- readRDS("data/allleaderboardClean241.rds")
+allLeaderboardClean <- allLeaderboardClean[which(!is.na(allLeaderboardClean$score)),]
+
+allLeaderboardClean$workoutType <- 
+  factor(allLeaderboardClean$workoutType, levels=c("Rx", "scaled", "foundations"))
+
+pl <- allLeaderboardClean |>
+  dplyr::filter(workout == "24.1") |>
+  ggplot(aes(as.numeric(timeInSecs)/60)) +
+  geom_histogram( ) +
+  facet_grid(division~workoutType) +
+  theme_cowplot() +
+  panel_border(colour="black") +
+  theme(axis.line=element_blank()) +
+  labs(y="#of participants", x="Time")
+
+pl
+```
+
+
+```{r}
+
+allLeaderboardClean |>
+  dplyr::filter( workout == "24.1", workoutType == "Rx" ) |>
+  dplyr::group_by( division, ageGroup ) |>
+  dplyr::summarize( cut25=quantile(as.numeric(timeInSecs), 0.25)/60 )
+
+```
+
+
+```{r, fig.height=5.6, fig.width=5, fig.res=300}
+
+
+extraInclude <- data.frame(
+  c("HelvetiX", "Basel", "Minic"),
+  "Basel Box")
+colnames(extraInclude) <- c("affiliateNameShort", "cat")
+
+boxplotTopGyms <- function(  allLeaderboardClean, wod="24.1", rankVar="affiliateName", 
+                             div="M", wodType="Rx", extraInclude=NULL, minParticipants=1, 
+                             topN=10 ){
+  topBoxes <- allLeaderboardClean |>
+    dplyr::filter( workout == wod, workoutType == wodType, division == div ) |>
+    dplyr::group_by( get(rankVar) ) |>
+    dplyr::summarise( 
+      meanTime=median(as.numeric(timeInSecs), na.rm=TRUE), 
+      numparticipants=dplyr::n() ) |>
+    dplyr::arrange( meanTime ) |>
+    dplyr::filter( numparticipants > minParticipants ) |>
+    head(topN) |>
+    dplyr::select( `get(rankVar)` ) |>
+    dplyr::mutate( cat="Top 10" )
+  colnames(topBoxes) <- c(rankVar, "cat")
+  topBoxes <- rbind(topBoxes, extraInclude)
+  topLeaderboard <- allLeaderboardClean |>
+    dplyr::filter( division == div, workoutType == wodType, division == div ) |>
+    dplyr::select( competitorName, !!rankVar, timeInSecs ) |>
+    dplyr::left_join( topBoxes ) |>
+    dplyr::mutate( cat=ifelse( is.na(cat), "Other", cat ) )
+   topLeaderboard[[rankVar]] <- 
+     ifelse( topLeaderboard[[rankVar]] %in% topBoxes[[rankVar]], 
+             topLeaderboard[[rankVar]], "Other" )
+   topLeaderboard[[rankVar]] <- forcats::fct_reorder(
+     topLeaderboard[[rankVar]], 
+     as.numeric(topLeaderboard$timeInSecs),
+     median)
+   pl <- topLeaderboard |>
+     ggplot( aes( get(rankVar), as.numeric(timeInSecs)/60, col=cat)) +
+     geom_boxplot() +
+     theme_cowplot() +
+     theme( axis.text.x=element_text(angle=35, hjust=1) ) +
+     labs(x="", y="minutes", col="",
+          title=sprintf("%s %s %s", wod, div, wodType ))
+   pl
+}
+
+allPossibilities <- expand.grid( 
+  div=c("M", "F"), 
+  wodType=c("Rx", "scaled", "foundations") )
+
+allBoxplots <- lapply(seq_len(nrow(allPossibilities)), function(i){
+  boxplotTopGyms( 
+    allLeaderboardClean, 
+    div=allPossibilities[i,"div"], extraInclude=extraInclude, 
+    wodType=allPossibilities[i,"wodType"], 
+    rankVar="affiliateNameShort" ) +
+    theme(legend.pos="none") +
+    coord_cartesian( ylim=c(5, 15) )
+})
+
+plots <- plot_grid( plotlist=allBoxplots, ncol=2, align="hv" )
+
+legend_b <- get_legend(
+  allBoxplots[[6]] + 
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "top"))
+
+plot_grid(legend_b, plots, ncol = 1, rel_heights = c(0.1, 1))
+
+```
