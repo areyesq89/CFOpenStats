@@ -1,11 +1,14 @@
 ---
 title: "CrossFit Open 24.1 Statistics Recap"
-output: html_document
+author: "Alejandro Reyes"
+output: 
+  bookdown::html_document2: default
+
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo=TRUE, warning=FALSE, message = FALSE, 
+  echo=FALSE, warning=FALSE, message = FALSE, 
   include=TRUE, cache=TRUE)
 ```
 
@@ -33,8 +36,6 @@ allLeaderboard <- lapply(seq_len(nrow(numberOfPagesDf)), function(i){
   sc <- numberOfPagesDf[i,"scaled"]
   pn <- numberOfPagesDf[i,"numPages"]
   pn <- seq_len(pn)
-  set.seed(2)
-  pn <- sample(pn, 28)
   tst <- lapply( pn, function(pageNum){
     tmpFile <- sprintf("cache/20240304openlead_div%d_sc%d_page%d.rds", div, sc, pageNum)
     if( !file.exists(tmpFile) ){
@@ -52,7 +53,7 @@ allLeaderboard <- lapply(seq_len(nrow(numberOfPagesDf)), function(i){
       participantScores <- Reduce(rbind, participantScores)
       participantScores <- merge(participants, participantScores)
       saveRDS(participantScores, file=tmpFile)
-      Sys.sleep(runif(1, min=1, max=5))
+      Sys.sleep(0.75)
       participantScores
     }else{
       participantScores <- readRDS(tmpFile)
@@ -66,12 +67,15 @@ allLeaderboard <- lapply(seq_len(nrow(numberOfPagesDf)), function(i){
 })
 
 allLeaderboard <- dplyr::bind_rows(allLeaderboard)
+saveRDS(allLeaderboard, file="cache/allLeaderboardDF.rds")
 
 ```
 
 
 ```{r, eval=FALSE}
 library(lubridate)
+
+allLeaderboard <- readRDS("cache/allLeaderboardDF.rds")
 
 allLeaderboardClean <- allLeaderboard |>
   dplyr::mutate( 
@@ -82,12 +86,13 @@ allLeaderboardClean <- allLeaderboard |>
     cols=dplyr::matches("24."), 
     names_to="workout",
     values_to="score" ) |>
+  dplyr::filter( !is.na(score) ) |>
   dplyr::mutate(
-    workoutType=dplyr::case_when(
+    workoutType=factor(dplyr::case_when(
       grepl("- s", score) ~ "scaled",
       grepl("- f", score) ~ "foundations",
       is.na(score) ~ NA_character_,
-      TRUE ~ "Rx" ),
+      TRUE ~ "Rx" ),levels=c("Rx", "scaled", "foundations")),
     score=gsub(" - s| - f", "" , score ),
     time=dplyr::case_when(
       workout == "24.1" & grepl("reps", score) ~ "15:00",
@@ -120,7 +125,7 @@ allLeaderboardClean <- allLeaderboard |>
   ) |>
   unique() |>
   dplyr::mutate( 
-    affiliateNameShort=gsub("CrossFit | CrossFit", "", affiliateName ))
+    affiliateNameShort=gsub("CrossFit", "CF", affiliateName ))
 
 levels(allLeaderboardClean$ageGroup) <- 
   c("14-15", "16-17", "18-34", "35-39", "40-44", "45-49", "50-54", "55-59", 
@@ -140,10 +145,28 @@ saveRDS(allLeaderboardClean, file="data/allleaderboardClean241.rds")
 
 ```
 
+
+
+
+```{r}
+
+library(ggplot2)
+library(cowplot)
+## library(plotly)
+
+allLeaderboardClean <- readRDS("data/allleaderboardClean241.rds")
+
+##allLeaderboardClean <- allLeaderboardClean[which(!is.na(allLeaderboardClean$score)),]
+##allLeaderboardClean$workoutType <- 
+#3  factor(allLeaderboardClean$workoutType, levels=c("Rx", "scaled", "foundations"))
+```
+
+
 The CrossFit Open is the largest participatory sporting event on Earth, 
-according to the official website. In the first out of the three workouts, 
-participants needed to perform the following series of exercise in a maximum
-of 15 minutes,
+according to the official website, that consist of three workouts 
+spread over three weeks. The first workout of the CrossFit Open 2024 
+took place last weekend and participants needed to perform the following 
+series of the following exercises with a time cap of 15 minutes,
 
 - 21 Dumbbell Snatches (arm 1) (50/35 lb)
 - 21 Lateral Burpees Over Dumbbell
@@ -158,59 +181,82 @@ of 15 minutes,
 - 9 Dumbbell Snatches (arm 2) (50/35 lb)
 - 9 Lateral Burpees Over Dumbbell
 
-`r ` participants submitted a score, of which `` participated in the Rx 
-category, `` participated in the scaled category and `` participated in 
-the foundations category. 
+
+## Global distribution of 24.1 scores {-}
+
+An impressive number of `r nrow(allLeaderboardClean)` participants submitted a score 
+to the CrossFit Open website, of which `r round(100*sum(allLeaderboardClean$workoutType == "Rx")/nrow(allLeaderboardClean))`% participated in the Rx category, `r round(100*sum(allLeaderboardClean$workoutType == "scaled")/nrow(allLeaderboardClean))`% 
+participated in the scaled category and `r round(100*sum(allLeaderboardClean$workoutType == "foundations")/nrow(allLeaderboardClean))`% participated in the foundations 
+category. 
 
 
-
-```{r}
-
-library(ggplot2)
-library(cowplot)
-## library(plotly)
-
-allLeaderboardClean <- readRDS("data/allleaderboardClean241.rds")
-allLeaderboardClean <- allLeaderboardClean[which(!is.na(allLeaderboardClean$score)),]
-
-allLeaderboardClean$workoutType <- 
-  factor(allLeaderboardClean$workoutType, levels=c("Rx", "scaled", "foundations"))
+```{r global-dist, fig.width=5, fig.height=5, fig.cap="Distribution of completion times for 24.1."}
 
 pl <- allLeaderboardClean |>
   dplyr::filter(workout == "24.1") |>
+  dplyr::filter(workoutType %in% c("Rx", "scaled")) |>
   ggplot(aes(as.numeric(timeInSecs)/60)) +
   geom_histogram( ) +
   facet_grid(division~workoutType) +
   theme_cowplot() +
   panel_border(colour="black") +
   theme(axis.line=element_blank()) +
-  labs(y="#of participants", x="Time")
+  labs(
+    y="#of participants", x="Completion time (minutes)",
+    caption="Alejandro Reyes. https://github.com/areyesq89/CFOpenStats.", 
+    title="Completion times of CF Open 24.1")
 
 pl
 ```
 
+Figure \@ref(fig:global-dist) shows the distribution of completion times
+for each scaling version for both male and female divisions. Across all 
+scaling versions, only `r round(100*sum(allLeaderboardClean$timeInSecs < 10*60)/nrow(allLeaderboardClean))`%
+completed the workout in less than 10 minutes and `r round(100*sum(allLeaderboardClean$reps < 180)/nrow(allLeaderboardClean))`% could not complete all the repetitions
+within the 15 minute mark. A very though workout!
 
-```{r}
+## How many seconds away am you from quater-final scores? {-}
+
+Athletes that rank among the top 25% in the Rx category classify to the quarterfinals. 
+Considering the data from 24.1. The table \@ref(fig:global-dist) shows 
+the completion times you'd have need to do in 24.1 in order to be 
+within the fastest 25% in your age category. 
+
+```{r thetable, results='asis'}
 
 allLeaderboardClean |>
   dplyr::filter( workout == "24.1", workoutType == "Rx" ) |>
   dplyr::group_by( division, ageGroup ) |>
-  dplyr::summarize( cut25=quantile(as.numeric(timeInSecs), 0.25)/60 )
+  dplyr::summarize( 
+    `completion time`=seconds_to_period(quantile(as.numeric(timeInSecs), 0.25))) |>
+  dplyr::rename( `Age group`=ageGroup ) |>
+  knitr::kable(caption = "Time cap of the 25% fastest in 24.1.") |>
+  kableExtra::kable_styling(full_width = F)
+
 
 ```
 
+For example, I am a 35 year old male and I completed
+the workout in 13:43, meaning that I'm more than 2 minutes away from being
+a quarter final athlete!
 
-```{r, fig.height=5.6, fig.width=5, fig.res=300}
+## Comparing scores between CF boxes {-}
 
+I extracted the boxes with the best average scores worldwide, and plotted
+the completion times together with the scores of the CF boxes in Basel, where 
+I live and workout (Figure \@ref(fig:box) ). 
+
+```{r  box, fig.height=6, fig.width=6, fig.res=300, fig.cap="Distribution of completion times of top 8 world boxes and basel boxes."}
 
 extraInclude <- data.frame(
-  c("HelvetiX", "Basel", "Minic"),
+  c("CF HelvetiX", "CF Basel", "CF Basel Downtown", "CF Minic"),
   "Basel Box")
 colnames(extraInclude) <- c("affiliateNameShort", "cat")
 
 boxplotTopGyms <- function(  allLeaderboardClean, wod="24.1", rankVar="affiliateName", 
-                             div="M", wodType="Rx", extraInclude=NULL, minParticipants=1, 
-                             topN=10 ){
+                             div="M", wodType="Rx", extraInclude=NULL, 
+                             minParticipants=10, 
+                             topN=8 ){
   topBoxes <- allLeaderboardClean |>
     dplyr::filter( workout == wod, workoutType == wodType, division == div ) |>
     dplyr::group_by( get(rankVar) ) |>
@@ -221,17 +267,17 @@ boxplotTopGyms <- function(  allLeaderboardClean, wod="24.1", rankVar="affiliate
     dplyr::filter( numparticipants > minParticipants ) |>
     head(topN) |>
     dplyr::select( `get(rankVar)` ) |>
-    dplyr::mutate( cat="Top 10" )
+    dplyr::mutate( cat=sprintf("World top %s",topN) )
   colnames(topBoxes) <- c(rankVar, "cat")
   topBoxes <- rbind(topBoxes, extraInclude)
   topLeaderboard <- allLeaderboardClean |>
     dplyr::filter( division == div, workoutType == wodType, division == div ) |>
     dplyr::select( competitorName, !!rankVar, timeInSecs ) |>
     dplyr::left_join( topBoxes ) |>
-    dplyr::mutate( cat=ifelse( is.na(cat), "Other", cat ) )
+    dplyr::mutate( cat=ifelse( is.na(cat), "Rest of the world", cat ) )
    topLeaderboard[[rankVar]] <- 
      ifelse( topLeaderboard[[rankVar]] %in% topBoxes[[rankVar]], 
-             topLeaderboard[[rankVar]], "Other" )
+             topLeaderboard[[rankVar]], "Rest of the world" )
    topLeaderboard[[rankVar]] <- forcats::fct_reorder(
      topLeaderboard[[rankVar]], 
      as.numeric(topLeaderboard$timeInSecs),
@@ -250,23 +296,42 @@ allPossibilities <- expand.grid(
   div=c("M", "F"), 
   wodType=c("Rx", "scaled", "foundations") )
 
+allPossibilities <- expand.grid( 
+  wodType=c("Rx"),
+  div=c("M", "F") )
+
 allBoxplots <- lapply(seq_len(nrow(allPossibilities)), function(i){
   boxplotTopGyms( 
     allLeaderboardClean, 
-    div=allPossibilities[i,"div"], extraInclude=extraInclude, 
-    wodType=allPossibilities[i,"wodType"], 
+    div=as.character(allPossibilities[i,"div"]), extraInclude=extraInclude, 
+    wodType=as.character(allPossibilities[i,"wodType"]), 
     rankVar="affiliateNameShort" ) +
     theme(legend.pos="none") +
     coord_cartesian( ylim=c(5, 15) )
 })
 
-plots <- plot_grid( plotlist=allBoxplots, ncol=2, align="hv" )
+plots <- plot_grid( plotlist=allBoxplots, ncol=1, align="hv" )
 
 legend_b <- get_legend(
-  allBoxplots[[6]] + 
+  allBoxplots[[1]] + 
     guides(color = guide_legend(nrow = 1)) +
     theme(legend.position = "top"))
 
-plot_grid(legend_b, plots, ncol = 1, rel_heights = c(0.1, 1))
+plot_grid(legend_b, plots, ncol = 1, rel_heights = c(0.1, 1)) +
+  draw_figure_label(label = "A. Reyes. https://github.com/areyesq89/CFOpenStats.",
+                    position="bottom.right") +
+    draw_figure_label(label = "Comparison of 24.1 between CF boxes",
+                    position="top.left")
 
 ```
+
+It is interesting that in the Rx category, the 
+completion times of my box (CF HelvetiX) is very similar to the world wide 
+distributions for the male division. But for the female division, 
+females in CF HelvetiX are much more stronger than the average and closer to 
+best boxes around the globe.
+
+## Conclusion {-}
+
+If you are betting for someone in Basel to classify to the quarter finals,
+bet for a CF HelvetiX female athlete!
