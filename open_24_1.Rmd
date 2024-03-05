@@ -165,7 +165,7 @@ allLeaderboardClean <- readRDS("data/allleaderboardClean241.rds")
 The CrossFit Open is the largest participatory sport event on Earth, 
 according to the official website, and it consists of three workouts 
 spread over three weeks. The first workout of the CrossFit Open 2024 
-took place last weekend and participants needed to perform the following 
+took place last weekend and participants in the Rx category had to perform the following 
 exercises within maximum 15 minutes:
 
 - 21 Dumbbell Snatches (arm 1) (50/35 lb)
@@ -234,7 +234,7 @@ allLeaderboardClean |>
     `24.1 time`=seconds_to_period(quantile(as.numeric(timeInSecs), 0.25))) |>
   dplyr::rename( `Age group`=ageGroup ) |>
   dplyr::select( `Age group`, `24.1 time` ) |>
-  knitr::kable(caption = "Time cap of the 25% fastest in 24.1 (male)") |>
+  knitr::kable(caption = "Completion time of the top 25% male athletes in 24.1") |>
   kableExtra::kable_styling(full_width = F)
 
 ```
@@ -248,7 +248,7 @@ allLeaderboardClean |>
     `24.1 time`=seconds_to_period(quantile(as.numeric(timeInSecs), 0.25))) |>
   dplyr::rename( `Age group`=ageGroup ) |>
   dplyr::select( `Age group`, `24.1 time` ) |>
-  knitr::kable(caption = "Time cap of the 25% fastest in 24.1 (female)") |>
+  knitr::kable(caption = "Completion time of the top 25% female athletes in 24.1") |>
   kableExtra::kable_styling(full_width = F)
 
 ```
