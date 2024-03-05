@@ -162,11 +162,11 @@ allLeaderboardClean <- readRDS("data/allleaderboardClean241.rds")
 ```
 
 
-The CrossFit Open is the largest participatory sporting event on Earth, 
-according to the official website, that consist of three workouts 
+The CrossFit Open is the largest participatory sport event on Earth, 
+according to the official website, and it consists of three workouts 
 spread over three weeks. The first workout of the CrossFit Open 2024 
 took place last weekend and participants needed to perform the following 
-series of the following exercises with a time cap of 15 minutes,
+exercises within maximum 15 minutes:
 
 - 21 Dumbbell Snatches (arm 1) (50/35 lb)
 - 21 Lateral Burpees Over Dumbbell
@@ -184,9 +184,9 @@ series of the following exercises with a time cap of 15 minutes,
 
 ## Global distribution of 24.1 scores {-}
 
-An impressive number of `r nrow(allLeaderboardClean)` participants submitted a score 
-to the CrossFit Open website, of which `r round(100*sum(allLeaderboardClean$workoutType == "Rx")/nrow(allLeaderboardClean))`% participated in the Rx category, `r round(100*sum(allLeaderboardClean$workoutType == "scaled")/nrow(allLeaderboardClean))`% 
-participated in the scaled category and `r round(100*sum(allLeaderboardClean$workoutType == "foundations")/nrow(allLeaderboardClean))`% participated in the foundations 
+An impressive `r nrow(allLeaderboardClean)` participants submitted a score 
+to the CrossFit Open website: `r round(100*sum(allLeaderboardClean$workoutType == "Rx")/nrow(allLeaderboardClean))`% of participants competed in the "Rx" category, `r round(100*sum(allLeaderboardClean$workoutType == "scaled")/nrow(allLeaderboardClean))`% 
+competed in the "scaled" category and `r round(100*sum(allLeaderboardClean$workoutType == "foundations")/nrow(allLeaderboardClean))`% competed in the "foundations" 
 category. 
 
 
@@ -206,45 +206,63 @@ pl <- allLeaderboardClean |>
     caption="Alejandro Reyes. https://github.com/areyesq89/CFOpenStats.", 
     title="Completion times of CF Open 24.1")
 
+pr <- round(100*sum(allLeaderboardClean$timeInSecs < (10*60))/nrow(allLeaderboardClean))
+
 pl
 ```
 
 Figure \@ref(fig:global-dist) shows the distribution of completion times
-for each scaling version for both male and female divisions. Across all 
-scaling versions, only `r round(100*sum(allLeaderboardClean$timeInSecs < 10*60)/nrow(allLeaderboardClean))`%
-completed the workout in less than 10 minutes and `r round(100*sum(allLeaderboardClean$reps < 180)/nrow(allLeaderboardClean))`% could not complete all the repetitions
-within the 15 minute mark. A very though workout!
+for each category for male and female divisions. Across all 
+categories, only  
+`r pr`%
+of athletes completed the workout in less than 10 minutes and `r round(100*sum(allLeaderboardClean$reps < 180)/nrow(allLeaderboardClean))`% could not complete all the repetitions
+within the 15 minute mark. It was a very though workout!
 
-## How many seconds away am you from quater-final scores? {-}
+## How many seconds away are you from quarter-final scores? {-}
 
-Athletes that rank among the top 25% in the Rx category classify to the quarterfinals. 
-Considering the data from 24.1. The table \@ref(fig:global-dist) shows 
-the completion times you'd have need to do in 24.1 in order to be 
-within the fastest 25% in your age category. 
+Athletes that rank among the top 25% in the Rx category qualify to the quarterfinals. 
+Table \@ref(fig:global-dist) shows 
+how fast an athlete would have had to complete 24.1 in order to be 
+within the top 25% in their age category. 
 
-```{r thetable, results='asis'}
+```{r thetablemale, results='asis'}
 
 allLeaderboardClean |>
-  dplyr::filter( workout == "24.1", workoutType == "Rx" ) |>
+  dplyr::filter( workout == "24.1", workoutType == "Rx", division =="M" ) |>
   dplyr::group_by( division, ageGroup ) |>
   dplyr::summarize( 
-    `completion time`=seconds_to_period(quantile(as.numeric(timeInSecs), 0.25))) |>
+    `24.1 time`=seconds_to_period(quantile(as.numeric(timeInSecs), 0.25))) |>
   dplyr::rename( `Age group`=ageGroup ) |>
-  knitr::kable(caption = "Time cap of the 25% fastest in 24.1.") |>
+  dplyr::select( `Age group`, `24.1 time` ) |>
+  knitr::kable(caption = "Time cap of the 25% fastest in 24.1 (male)") |>
   kableExtra::kable_styling(full_width = F)
-
 
 ```
 
-For example, I am a 35 year old male and I completed
-the workout in 13:43, meaning that I'm more than 2 minutes away from being
-a quarter final athlete!
+```{r thetablefemale, results='asis'}
+
+allLeaderboardClean |>
+  dplyr::filter( workout == "24.1", workoutType == "Rx", division == "F") |>
+  dplyr::group_by( division, ageGroup ) |>
+  dplyr::summarize( 
+    `24.1 time`=seconds_to_period(quantile(as.numeric(timeInSecs), 0.25))) |>
+  dplyr::rename( `Age group`=ageGroup ) |>
+  dplyr::select( `Age group`, `24.1 time` ) |>
+  knitr::kable(caption = "Time cap of the 25% fastest in 24.1 (female)") |>
+  kableExtra::kable_styling(full_width = F)
+
+```
+
+For example, I am a 35-year-old male and I completed
+the Rx workout in 13:43, meaning that I'm more than two minutes away from being
+a quarter-final athlete!
 
 ## Comparing scores between CF boxes {-}
 
-I extracted the boxes with the best average scores worldwide, and plotted
-the completion times together with the scores of the CF boxes in Basel, where 
-I live and workout (Figure \@ref(fig:box) ). 
+Figure \@ref(fig:box) shows a comparison of completion times between: 
+- CF boxes with at least ten athletes in the CF Open leaderboard that had the best average scores worldwide (blue) 
+- CF boxes in Basel, where I live and work out (red)
+- CF boxes in the rest of the world (green)
 
 ```{r  box, fig.height=6, fig.width=6, fig.res=300, fig.cap="Distribution of completion times of top 8 world boxes and basel boxes."}
 
@@ -326,12 +344,11 @@ plot_grid(legend_b, plots, ncol = 1, rel_heights = c(0.1, 1)) +
 ```
 
 It is interesting that in the Rx category, the 
-completion times of my box (CF HelvetiX) is very similar to the world wide 
-distributions for the male division. But for the female division, 
-females in CF HelvetiX are much more stronger than the average and closer to 
-best boxes around the globe.
+completion times of male athletes from my CF box (CF HelvetiX) are very similar to those of CF boxes across the rest of the world. However, the 
+completion times of female athletes from CF HelvetiX are much closer to the world's top
+eight boxes.
 
 ## Conclusion {-}
 
-If you are betting for someone in Basel to classify to the quarter finals,
-bet for a CF HelvetiX female athlete!
+If you have to bet for someone in Basel to qualify to the CF Games quarter finals,
+bet on a CF HelvetiX female athlete!
